@@ -69,45 +69,74 @@ export function autoUpdate(
     ancestorResize && ancestor.addEventListener('resize', update);
   });
 
-  let observer: ResizeObserver | null = null;
+  let resizeObserver: ResizeObserver | null = null;
   if (elementResize) {
     let initialUpdate = true;
-    observer = new ResizeObserver(() => {
+    resizeObserver = new ResizeObserver(() => {
       if (!initialUpdate) {
         update();
       }
 
       initialUpdate = false;
     });
-    isElement(reference) && !animationFrame && observer.observe(reference);
+    isElement(reference) && !animationFrame && resizeObserver.observe(reference);
     if (!isElement(reference) && reference.contextElement && !animationFrame) {
-      observer.observe(reference.contextElement);
+      resizeObserver.observe(reference.contextElement);
     }
-    observer.observe(floating);
+    resizeObserver.observe(floating);
   }
 
-  let frameId: number;
-  let prevRefRect = animationFrame ? getBoundingClientRect(reference) : null;
+  let frameId: number | null = null;
+  let intersectionObserver: IntersectionObserver | null = null;
+  let prevRefRect : DOMRect | null = null;
 
   if (animationFrame) {
     frameLoop();
   }
 
   function frameLoop() {
-    const nextRefRect = getBoundingClientRect(reference);
+    if (isElement(reference) ) {
+      intersectionObserver = new IntersectionObserver(([referenceEntry]) => {
+        if (!referenceEntry) {
+          return;
+        }
 
-    if (
-      prevRefRect &&
-      (nextRefRect.x !== prevRefRect.x ||
-        nextRefRect.y !== prevRefRect.y ||
-        nextRefRect.width !== prevRefRect.width ||
-        nextRefRect.height !== prevRefRect.height)
-    ) {
-      update();
+        const nextRefRect = referenceEntry.boundingClientRect;
+
+        if (
+          prevRefRect &&
+          (nextRefRect.x !== prevRefRect.x ||
+            nextRefRect.y !== prevRefRect.y ||
+            nextRefRect.width !== prevRefRect.width ||
+            nextRefRect.height !== prevRefRect.height)
+        ) {
+          update();
+        }
+
+        prevRefRect = nextRefRect;
+        frameId = requestAnimationFrame(frameLoop);
+
+        intersectionObserver?.disconnect();
+        intersectionObserver = null;
+      });
+
+      intersectionObserver.observe(reference);
+    } else {
+      const nextRefRect = getBoundingClientRect(reference);
+
+      if (
+        prevRefRect &&
+        (nextRefRect.x !== prevRefRect.x ||
+          nextRefRect.y !== prevRefRect.y ||
+          nextRefRect.width !== prevRefRect.width ||
+          nextRefRect.height !== prevRefRect.height)
+      ) {
+        update();
+      }
+
+      prevRefRect = nextRefRect;
+      frameId = requestAnimationFrame(frameLoop);
     }
-
-    prevRefRect = nextRefRect;
-    frameId = requestAnimationFrame(frameLoop);
   }
 
   update();
@@ -118,10 +147,13 @@ export function autoUpdate(
       ancestorResize && ancestor.removeEventListener('resize', update);
     });
 
-    observer?.disconnect();
-    observer = null;
+    resizeObserver?.disconnect();
+    resizeObserver = null;
 
-    if (animationFrame) {
+    intersectionObserver?.disconnect();
+    intersectionObserver = null;
+
+    if (frameId) {
       cancelAnimationFrame(frameId);
     }
   };
